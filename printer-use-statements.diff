@@ -1,0 +1,66 @@
+diff --git a/Classes/ExtensionBuilder/Service/Printer.php b/Classes/ExtensionBuilder/Service/Printer.php
+index f793565..bbfb394 100644
+--- a/Classes/ExtensionBuilder/Service/Printer.php
++++ b/Classes/ExtensionBuilder/Service/Printer.php
+@@ -3,7 +3,9 @@
+ namespace Vierwd\VierwdBase\ExtensionBuilder\Service;
+ 
+ use EBT\ExtensionBuilder\Domain\Model\File;
++use EBT\ExtensionBuilder\Domain\Model\NamespaceObject;
+ use PhpParser\Node\Stmt;
++use PhpParser\Node\Expr\Array_;
+ 
+ class Printer extends \EBT\ExtensionBuilder\Service\Printer {
+ 	protected $indentToken = "\t";
+@@ -16,6 +18,12 @@ class Printer extends \EBT\ExtensionBuilder\Service\Printer {
+ 		// remove comments which say nothing (set title for a setTitle method, or "title" for a $title property)
+ 		foreach ($fileObject->getNamespaces() as $namespace) {
+ 			foreach ($namespace->getClasses() as $class) {
++				if ($class->getParentClassName() && substr($class->getParentClassName(), 0, 1) === '\\') {
++					// add a use statement for this class
++					$parentClass = $this->addUseStatement($namespace, $class->getParentClassName());
++					$class->setParentClassName($parentClass);
++				}
++
+ 				if ($class->getDescription() === $class->getName()) {
+ 					$class->setDescription('');
+ 				}
+@@ -65,6 +73,29 @@ class Printer extends \EBT\ExtensionBuilder\Service\Printer {
+ 		return parent::renderFileObject($fileObject, $prependPHPTag);
+ 	}
+ 
++	protected function addUseStatement(NamespaceObject $namespace, string $className): string {
++		if (substr($className, 0, 1) === '\\') {
++			// strip leading \
++			$className = substr($className, 1);
++		}
++
++		$classNamePart = array_pop(explode('\\', $className));
++
++		foreach ($namespace->getAliasDeclarations() as $useStatement) {
++			if ($useStatement['name'] === $className) {
++				// use statement for this class already exists. Just return the name
++				return $useStatement['alias'] ?? $classNamePart;
++			}
++		}
++
++		// add a new use statement
++		$namespace->addAliasDeclaration([
++			'name' => $className,
++			'alias' => null,
++		]);
++		return $classNamePart;
++	}
++
+ 	public function render($stmts) {
+ 		$code = parent::render($stmts);
+ 		$code = $this->trimTrailingWhitespace($code);
+@@ -93,7 +124,7 @@ class Printer extends \EBT\ExtensionBuilder\Service\Printer {
+ 		return preg_replace('/\n\s+\{/', ' {', $string);
+ 	}
+ 
+-	public function pExpr_Array(\PhpParser\Node\Expr\Array_ $node) {
++	public function pExpr_Array(Array_ $node) {
+ 		$multiLine = false;
+ 		$startLine = $node->getAttribute('startLine');
+ 		$endLine = $node->getAttribute('endLine');
